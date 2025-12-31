@@ -1,0 +1,60 @@
+### Model
+model_name_or_path: /home/wangxingjian/model/Qwen3-VL-2B-Instruct  
+trust_remote_code: true
+use_v1_kernels: true 
+
+### Method
+stage: sft
+do_train: true  # 是否执行训练（设为 false 可跳过训练，仅做评估）
+finetuning_type: full  # full/lora
+deepspeed: examples/deepspeed/ds_z2_config.json  # DeepSpeed 配置文件路径（启用分布式/显存优化）
+
+### Dataset
+dataset: qwen3_vl_test  # 数据集名称（需在 dataset_info.json 中注册）
+template: qwen3_vl  
+default_system: |
+  You are an expert video analyst tasked with solving problems based on video content.
+  When answering a question about a video, you should carefully observe and analyze important visual clues from the
+  videos to answer. For each important segment you notice, first observe the key visual elements, then analyze their
+  significance using the following format: specify the time range with `<time>start_time-end_time</time>`, describe the
+  key visual clues with `<caption>Description of key visual clues</caption>`, and provide your analysis about what this
+  means with `<think>Your analysis and thoughts about this segment</think>`. Throughout your analysis, think about the
+  question as if you were a human pondering deeply, engaging in an internal dialogue using natural thought expressions
+  such as such as 'let me think', 'wait', 'Hmm', 'oh, I see', 'let's break it down', etc, or other natural language
+  thought expressions. After examining the key visual clues, continue with deeper reasoning that connects your
+  observations to the answer. Self-reflection or verification in your reasoning process is encouraged when necessary,
+  though if the answer is straightforward, you may proceed directly to the conclusion. Finally, conclude by placing
+  your final answer in `<answer> </answer>` tags.
+cutoff_len: 2048  # 分词后输入序列最大长度
+max_samples: 1000  # 每个数据集最多用多少条样本（-1=全部；用于快速验证）
+overwrite_cache: true  # 是否覆盖之前缓存的分词结果（改了参数后务必置 true）
+preprocessing_num_workers: 1  # 数据预处理的并行 worker 数（1=单进程，避免多进程 fork 干扰分布式）
+dataloader_num_workers: 0  # DataLoader 的并行 worker 数（0=禁用，避免多进程冲突）
+media_dir: /home/wangxingjian/OneMLLM/LLaMA-Factory/test_data  # 视频/图片媒体文件所在目录
+
+### Output
+output_dir: /home/wangxingjian/OneMLLM/LLaMA-Factory/test_data/ckpts/qwen3_vl_sft  # 模型检查点、日志输出目录
+logging_steps: 1  # 每 N steps 打印一次训练日志
+save_steps: 500  # 每 N steps 保存一次检查点
+plot_loss: true  # 是否绘制 loss 曲线图
+overwrite_output_dir: true  # 输出目录已存在时是否覆盖
+save_only_model: false  # 保存时是否只保存模型权重（false=还保存 optimizer/training state，用于断点续训）
+report_to: none  # [wandb, tensorboard, swanlab, mlflow]
+
+### Training
+per_device_train_batch_size: 4  # 每张 GPU 的 batch size
+gradient_accumulation_steps: 1  # 梯度累积步数
+learning_rate: 1.0e-4  
+num_train_epochs: 3.0 
+lr_scheduler_type: cosine  # 学习率调度器：cosine=余弦退火（其他可选 linear, constant, polynomial 等）
+warmup_ratio: 0.1  # 预热比例：学习率从 0 线性增加到 lr，占总步数的 10%
+bf16: true  # 使用 bfloat16 混合精度训练
+ddp_timeout: 180000000  # 分布式 PyTorch (DDP) 超时时间
+resume_from_checkpoint: null  # 断点续训：若有之前的检查点，填写路径；null=从头开始
+
+### Evaluation
+# eval_dataset: alpaca_en_demo  # 评估数据集名称
+# val_size: 0.1  # 从训练数据抽取 10% 作为验证集
+# per_device_eval_batch_size: 1  # 评估时每张 GPU 的 batch size
+# eval_strategy: steps  # 评估策略：steps=每 N steps 评估一次（epoch=每个 epoch 评估一次）
+# eval_steps: 500  # 每 500 steps 执行一次评估
