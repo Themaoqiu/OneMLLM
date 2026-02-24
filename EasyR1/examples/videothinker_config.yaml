@@ -1,0 +1,111 @@
+data:
+  train_files: /home/wangxingjian/videothinker/vsitest.jsonl
+  val_files: /home/wangxingjian/videothinker/vsitest.jsonl
+  prompt_key: problem
+  answer_key: solution
+  image_key: images
+  video_key: path
+  image_dir: null
+  video_dir_map:
+    VSIBench: /home/wangxingjian/videothinker/vsi
+  video_fps: 1.0
+  max_prompt_length: 16384
+  max_response_length: 1024
+  rollout_batch_size: 1
+  mini_rollout_batch_size: 1
+  val_batch_size: 1
+  format_prompt: ./examples/format_prompt/videothinker.jinja
+  override_chat_template: null
+  shuffle: true
+  seed: 1
+  min_pixels: 3136
+  max_pixels: 200704
+  filter_overlong_prompts: false
+
+algorithm:
+  adv_estimator: grpo
+  disable_kl: false
+  use_kl_loss: true
+  kl_penalty: low_var_kl
+  kl_coef: 1.0e-2
+  online_filtering: false
+  filter_key: overall
+  filter_low: 0.01
+  filter_high: 0.99
+
+worker:
+  actor:
+    global_batch_size: 1
+    micro_batch_size_per_device_for_update: 1
+    micro_batch_size_per_device_for_experience: 1
+    max_grad_norm: 1.0
+    padding_free: true
+    dynamic_batching: true
+    ulysses_size: 1
+    use_torch_compile: false
+    model:
+      model_path: Qwen/Qwen3-VL-4B-Instruct
+      enable_gradient_checkpointing: true
+      trust_remote_code: true
+      freeze_vision_tower: false
+    optim:
+      lr: 5.0e-6
+      weight_decay: 1.0e-2
+      strategy: adamw
+      lr_warmup_ratio: 0.0
+    fsdp:
+      enable_full_shard: true
+      enable_cpu_offload: false
+      enable_rank0_init: true
+    offload:
+      offload_params: true
+      offload_optimizer: true
+
+  rollout:
+    n: 4
+    temperature: 1.0
+    top_p: 1.0
+    max_model_len: 25600
+    max_num_batched_tokens: 25600
+    limit_images: 0
+    gpu_memory_utilization: 0.8
+    enforce_eager: false
+    enable_chunked_prefill: false
+    tensor_parallel_size: 1
+    disable_tqdm: false
+    val_override_config:
+      temperature: 0.6
+      top_p: 0.95
+      n: 1
+
+  ref:
+    fsdp:
+      enable_full_shard: true
+      enable_cpu_offload: true
+      enable_rank0_init: true
+    offload:
+      offload_params: false
+
+  reward:
+    reward_type: batch
+    reward_function: ./examples/reward_function/videothinker.py:compute_score
+
+trainer:
+  total_epochs: 1
+  max_steps: null
+  project_name: easy_r1
+  experiment_name: qwen3_vl_4b_videothinker_grpo
+  logger: ["file"]
+  nnodes: 1
+  n_gpus_per_node: 1
+  max_try_make_batch: 20
+  val_freq: -1
+  val_before_train: false
+  val_only: false
+  val_generations_to_log: 3
+  save_freq: 5
+  save_limit: 3
+  save_model_only: false
+  save_checkpoint_path: null
+  load_checkpoint_path: null
+  find_last_checkpoint: true
