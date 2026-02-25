@@ -16,6 +16,7 @@
 
 import math
 import os
+import json
 from collections import defaultdict
 from io import BytesIO
 from typing import Any, Optional, Union
@@ -31,90 +32,6 @@ from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizer, ProcessorMixin
 
 from . import torch_functional as VF
-
-
-QUESTION_TEMPLATE = (
-    "{Question}\n"
-    "Please answer this question based on the visual content."
-    "Provide your thinking process between the <think> and </think> tags, and then give your final answer between the <answer> and </answer> tags."
-    "At the end, you must output the final answer in the format:\n"
-    "<answer><your_answer_here></answer>\n"
-)
-
-TYPE_TEMPLATE = {
-    "multiple choice": (
-        "Please provide only the single option letter (e.g., A, B, C, D, etc.) "
-        "within the <answer>...</answer> tags.\n"
-        "Example:\n<answer>A</answer>"
-    ),
-    "numerical": (
-        "Please provide only the numerical value within the <answer>...</answer> tags.\n"
-        "Example:\n<answer>3.14</answer>"
-    ),
-    "OCR": (
-        "Please provide only the transcribed text within the <answer>...</answer> tags.\n"
-        "Example:\n<answer>Hello World</answer>"
-    ),
-    "open-ended": (
-        "Please provide only your text answer within the <answer>...</answer> tags.\n"
-        "Example:\n<answer>The capital of France is Paris.</answer>"
-    ),
-    "regression": (
-        "Please provide only the numerical value within the <answer>...</answer> tags.\n"
-        "Example:\n<answer>42.7</answer>"
-    ),
-    "math": (
-        "Please provide only the final result (a number or LaTeX formula) within the <answer>...</answer> tags.\n"
-        "Example:\n<answer>$$-\\dfrac{3}{2}$$</answer>"
-    ),
-    "temporal grounding": (
-        "Please provide only the time span in seconds as JSON within the <answer>...</answer> tags.\n"
-        "Example:\n<answer>{\"time\": [12.3, 25.7]}</answer>"
-    ),
-    "spatial grounding": (
-        "Please provide only the bounding box as JSON with key 'boxes' within the <answer>...</answer> tags.\n"
-        "Example:\n<answer>{\"boxes\": [35, 227, 437, 932]}</answer>"
-    ),
-    "spatial-temporal grounding": (
-        "Please provide only the time span in seconds and bounding boxes as JSON within the <answer>...</answer> tags.\n"
-        "You MUST output one bounding box for every integer second within the given time span (inclusive).\n"
-        "Example:\n"
-        "<answer>{\"time\": [8.125, 13.483], \"boxes\": {\"9\": [317, 422, 582, 997], "
-        "\"10\": [332, 175, 442, 369], \"11\": [340, 180, 450, 370]}}</answer>\n"
-        "Note: Each key in 'boxes' must be an integer second within the span, and its value must be a 4-number bounding box [x1, y1, x2, y2]."
-    ),
-    "tracking": (
-        "Please track the target object throughout the video and provide one bounding box per second, "
-        "ONLY up to 32 seconds, within the <answer>...</answer> tags.\n"
-        "Example:\n"
-        "<answer>{\"boxes\": {\"1\": [405, 230, 654, 463], \"2\": [435, 223, 678, 446], ..., "
-        "\"32\": [415, 203, 691, 487]}}</answer>\n"
-        "Note: Each key in 'boxes' must correspond to a second (1, 2, 3, ..., 32) and contain a 4-number bounding box [x1, y1, x2, y2]."
-    ),
-    "segmentation_image": (
-        "This task prepares inputs for image object segmentation with a specialized model (e.g., SAM2).\n"
-        "Please provide ONE bounding box, 3 positive points (clearly INSIDE the object), and 3 negative points "
-        "(clearly OUTSIDE the object) within the <answer>...</answer> tags.\n"
-        "Choose informative points that help distinguish object vs. background. Prefer negatives on clear non-object "
-        "pixels INSIDE the box when safe; otherwise place them just outside on obvious background. "
-        "Negatives must NEVER be on the object or on its boundary.\n"
-        "Example:\n"
-        "<answer>{\"boxes\": [x1, y1, x2, y2], \"positive_points\": [[x,y],[x,y],[x,y]], "
-        "\"negative_points\": [[x,y],[x,y],[x,y]]}</answer>"
-    ),
-    "segmentation_video": (
-        "This task prepares inputs for video object segmentation with a specialized model (e.g., SAM2).\n"
-        "Please select ONE representative time (in seconds), and provide ONE bounding box, "
-        "3 positive points (clearly INSIDE the object), and 3 negative points (clearly OUTSIDE the object) "
-        "within the <answer>...</answer> tags.\n"
-        "Choose informative points that help distinguish object vs. background. Prefer negatives on clear non-object "
-        "pixels INSIDE the box when safe; otherwise place them just outside on obvious background. "
-        "Negatives must NEVER be on the object or on its boundary.\n"
-        "Example:\n"
-        "<answer>{\"time\": <time_in_seconds>, \"boxes\": [x1, y1, x2, y2], "
-        "\"positive_points\": [[x,y],[x,y],[x,y]], \"negative_points\": [[x,y],[x,y],[x,y]]}</answer>"
-    )
-}
 
 
 def collate_fn(features: list[dict[str, Any]]) -> dict[str, Any]:
@@ -321,29 +238,34 @@ class RLHFDataset(Dataset):
 
 
     def _build_messages(self, example: dict[str, Any]) -> list[dict[str, Any]]:
-        prompt_str: str = example[self.prompt_key]
+        base_prompt: str = example[self.prompt_key]
+        prompt_str = base_prompt
         if self.format_prompt:
             format_prompt = Template(self.format_prompt.strip())
-            prompt_str = format_prompt.render(content=prompt_str, example=example, **example)
-
-        data_type = (example.get("data_type") or "").strip().lower()
-        pt = example.get("problem_type") or ""
-        question = prompt_str  
-
-        if (pt == "multiple choice") and isinstance(example.get("options"), list) and example["options"]:
-            opts = "\n".join(example["options"])
-            question = f"{question}\nOptions:\n{opts}"
-
-        if pt == "segmentation":
-            type_key = "segmentation_video" if data_type == "video" else "segmentation_image"
-        else:
-            type_key = pt
-
-        tail = TYPE_TEMPLATE.get(type_key, "")
-        prompt_str = QUESTION_TEMPLATE.format(Question=question) + tail
+            prompt_str = format_prompt.render(content=base_prompt, example=example, **example)
 
         images = self._ensure_media_list(example.get(self.image_key))
         videos = self._ensure_media_list(example.get(self.video_key))
+
+        # If jinja outputs structured JSON, respect it directly.
+        if isinstance(prompt_str, str):
+            try:
+                parsed_prompt = json.loads(prompt_str)
+            except Exception:
+                parsed_prompt = None
+
+            if isinstance(parsed_prompt, list):
+                return parsed_prompt
+            if isinstance(parsed_prompt, dict) and ("system" in parsed_prompt or "user" in parsed_prompt):
+                messages = []
+                system_text = parsed_prompt.get("system")
+                user_text = parsed_prompt.get("user")
+                if system_text:
+                    messages.append({"role": "system", "content": str(system_text)})
+                if user_text:
+                    messages.append({"role": "user", "content": str(user_text)})
+                if messages:
+                    return messages
 
         if len(images) > 0:
             # https://huggingface.co/docs/transformers/en/tasks/image_text_to_text
