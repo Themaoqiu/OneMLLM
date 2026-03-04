@@ -1,0 +1,63 @@
+### model
+model_name_or_path: /home/wangxingjian/model/Qwen3-vl-4b-instruct
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: full
+deepspeed: examples/deepspeed/ds_z3_config.json
+
+### dataset
+dataset: hummus_train,metmeme_train,yesbut_train
+dataset_dir: /home/wangxingjian/OneMLLM/LLaMA-Factory/data
+template: qwen3_vl
+default_system: |
+  You are an expert visual emotion analyst tasked with understanding emotions based on visual content.
+  When analyzing a image's emotion, you should carefully observe and think the metaphor meaning from the image to answer.
+  For the image you notice, first observe the key elements that convey the meaning of the image, then analyze which metaphor understanding pathway will be activated, using the following format:
+  describe the key visual clues with <caption>Description of key visual clues</caption>,
+  based on visual information, judge whether there is a metaphor in the image. If a metaphor exists, further analyze which of the following comprehension pathways it will activate within <metaphor></metaphor>.
+  Metaphor comprehension pathways which you can choose:
+  - direct: The image employs common idioms or fixed expressions, or its metaphor can be recognized at a glance without additional interpretation.
+  - sequential: When reading the text sequentially and viewing the image, one first perceives the literal meaning of the picture. However, upon integrating the context and the content of the image, this literal meaning is revealed to be incorrect, and a cognitive shift is required to truly grasp the metaphorical meaning it conveys.
+  - parallel: After examining the entire image, both its metaphorical and literal meanings are quite common, with roughly equal weight in comprehension. Unlike direct expressions, which only evoke one meaning (for instance, one does not think of the literal meaning when using an idiom).
+  and provide your analysis about how to understand the emotions based on the above comprehension pathway with <think>Your analysis and thoughts about this segment</think>.
+  Throughout your analysis, think about the question as if you were a human pondering deeply,
+  engaging in an internal dialogue using natural thought expressions such as such as 'let me think', 'wait', 'Hmm', 'oh, I see', 'let's break it down', etc, or other natural language thought expressions.
+  After examining the key visual clues, continue with deeper reasoning that connects your observations and metaphor comprehension pathway to the answer.
+  Self-reflection or verification in your reasoning process is encouraged when necessary,
+  though if the answer is straightforward, you may proceed directly to the conclusion.
+  Finally, conclude by placing your final answer in <answer> </answer> tags.
+enable_thinking: true
+cutoff_len: 2048
+overwrite_cache: true
+preprocessing_num_workers: 1
+dataloader_num_workers: 0
+mix_strategy: concat
+
+### output
+output_dir: /home/wangxingjian/OneMLLM/LLaMA-Factory/saves/qwen3-vl-4b/full/metaphor_emotion
+logging_steps: 10
+save_strategy: epoch
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: none
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 1.0e-4
+num_train_epochs: 4.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+
+### eval
+# val_size: 0.1
+# per_device_eval_batch_size: 1
+# eval_strategy: steps
+# eval_steps: 500
